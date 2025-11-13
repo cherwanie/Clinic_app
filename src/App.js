@@ -1,35 +1,32 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { User, FileText, Calendar, DollarSign, Users, Activity, ClipboardList, Printer, LogOut, Lock, Search } from 'lucide-react';
 
-const userAccounts = {
-  doctor: [
-    { username: 'doctor1', password: '1234', name: 'นพ.สมศักดิ์ แพทย์ดี', role: 'doctor' },
-    { username: 'doctor2', password: '1234', name: 'พญ.สมหญิง ใจดี', role: 'doctor' },
-  ],
-  staff: [
-    { username: 'staff1', password: '1234', name: 'สมศรี พนักงานดี', role: 'staff' },
-    { username: 'staff2', password: '1234', name: 'วิไล ช่วยเหลือ', role: 'staff' },
-  ],
-  owner: [
-    { username: 'owner', password: '1234', name: 'คุณวิทยา เจ้าของคลินิก', role: 'owner' },
-  ],
-};
+const API = 'http://127.0.0.1:5000';
 
+/* --------------------------- Login --------------------------- */
 const Login = ({ onLogin }) => {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [showAccounts, setShowAccounts] = useState(false);
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    const allUsers = [...userAccounts.doctor, ...userAccounts.staff, ...userAccounts.owner];
-    const user = allUsers.find(u => u.username === username && u.password === password);
-
-    if (user) {
-      onLogin(user);
-    } else {
-      setError('ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+    setError('');
+    try {
+      const res = await fetch(`${API}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+      });
+      const data = await res.json();
+      if (res.ok && data.status === 'success') {
+        onLogin({ ...data.user, role: data.role });
+      } else {
+        setError(data.message || 'ชื่อผู้ใช้หรือรหัสผ่านไม่ถูกต้อง');
+      }
+    } catch {
+      setError('ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ Back-end ได้');
     }
   };
 
@@ -79,11 +76,11 @@ const Login = ({ onLogin }) => {
             </div>
           </div>
 
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
-              {error}
-            </div>
-          )}
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg text-sm">
+            {error}
+          </div>
+        )}
 
           <button type="submit" className="w-full bg-indigo-600 text-white py-3 rounded-lg hover:bg-indigo-700 transition-colors font-semibold shadow-lg">
             เข้าสู่ระบบ
@@ -98,7 +95,7 @@ const Login = ({ onLogin }) => {
 
         {showAccounts && (
           <div className="mt-4 bg-gray-50 rounded-lg p-4 text-sm">
-            <p className="font-bold text-gray-700 mb-2">บัญชีทดสอบ (รหัสผ่านทั้งหมด: 1234)</p>
+            <p className="font-bold text-gray-700 mb-2">บัญชีทดสอบ (รหัสผ่าน 1234 ทั้งหมด)</p>
             <div className="space-y-2">
               <div className="bg-blue-50 p-2 rounded">
                 <p className="font-semibold text-blue-700">แพทย์:</p>
@@ -120,28 +117,60 @@ const Login = ({ onLogin }) => {
   );
 };
 
+/* --------------------------- Doctor --------------------------- */
 const DoctorDashboard = ({ onLogout, userData }) => {
   const [activeTab, setActiveTab] = useState('records');
   const [selectedPatient, setSelectedPatient] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
-  
-  const [patients, setPatients] = useState([
-    { id: 1, name: 'สมชาย ใจดี', age: 35, hn: 'HN001', tel: '081-234-5678', lastVisit: '2025-10-15' },
-    { id: 2, name: 'สมหญิง รักสุข', age: 28, hn: 'HN002', tel: '082-345-6789', lastVisit: '2025-10-16' },
-    { id: 3, name: 'วิชัย มีสุข', age: 45, hn: 'HN003', tel: '083-456-7890', lastVisit: '2025-10-17' },
-  ]);
 
-  const [medicalRecords, setMedicalRecords] = useState([
-    { id: 1, patientId: 1, patientName: 'สมชาย ใจดี', date: '2025-10-15', diagnosis: 'ไข้หวัด', treatment: 'พาราเซตามอล 500mg x 3 ครั้ง/วัน', doctor: userData.name },
-    { id: 2, patientId: 2, patientName: 'สมหญิง รักสุข', date: '2025-10-16', diagnosis: 'ปวดหัว', treatment: 'พักผ่อนเพิ่ม, ยาแก้ปวด', doctor: userData.name },
-  ]);
+  // Patients
+  const [patients, setPatients] = useState([]);
+  const [loadingPatients, setLoadingPatients] = useState(true);
+  const [patientsError, setPatientsError] = useState('');
 
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch(`${API}/patients`);
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.message || 'โหลดรายชื่อผู้ป่วยไม่สำเร็จ');
+        setPatients(json.data || []);
+      } catch (err) {
+        setPatientsError(err.message || 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
+      } finally {
+        setLoadingPatients(false);
+      }
+    };
+    load();
+  }, []);
+
+  // Records (fetch-on-demand + cache)
+  const [recordsByPatient, setRecordsByPatient] = useState({});
+  const [loadingRecordsId, setLoadingRecordsId] = useState(null);
+  const [recordsErrorByPatient, setRecordsErrorByPatient] = useState({});
+
+  const loadRecords = async (pid) => {
+    if (recordsByPatient[pid]) return;
+    try {
+      setRecordsErrorByPatient((x) => ({ ...x, [pid]: '' }));
+      setLoadingRecordsId(pid);
+      const res = await fetch(`${API}/patients/${pid}/records`);
+      const json = await res.json();
+      if (!res.ok || json.status !== 'success') throw new Error(json.message || 'โหลดเวชระเบียนไม่สำเร็จ');
+      setRecordsByPatient((prev) => ({ ...prev, [pid]: json.data || [] }));
+    } catch (err) {
+      setRecordsErrorByPatient((x) => ({ ...x, [pid]: err.message || 'เกิดข้อผิดพลาด' }));
+    } finally {
+      setLoadingRecordsId(null);
+    }
+  };
+
+  // mock sections (ยังไม่เชื่อม DB)
   const [labResults, setLabResults] = useState([
     { id: 1, patientId: 1, patientName: 'สมชาย ใจดี', date: '2025-10-15', testType: 'ตรวจเลือด', result: 'ปกติ', wbc: 7200, rbc: 4.8, hb: 13.5, platelet: 250000 },
     { id: 2, patientId: 2, patientName: 'สมหญิง รักสุข', date: '2025-10-16', testType: 'ปัสสาวะ', result: 'รอผล', wbc: '-', rbc: '-', hb: '-', platelet: '-' },
   ]);
-
-  const [referrals, setReferrals] = useState([
+  const [referrals] = useState([
     { id: 1, patientId: 1, patientName: 'สมชาย ใจดี', date: '2025-10-10', hospital: 'โรงพยาบาลกลาง', reason: 'สงสัยโรคหัวใจ', status: 'รอติดตาม', doctor: userData.name },
   ]);
 
@@ -160,18 +189,16 @@ const DoctorDashboard = ({ onLogout, userData }) => {
     labResult: '',
   });
 
-  const handleFormChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-  };
+  const handleFormChange = (field, value) => setFormData((p) => ({ ...p, [field]: value }));
 
+  // mock add treatment (ยังไม่บันทึก DB)
+  const [medicalRecords, setMedicalRecords] = useState([]);
   const handleAddTreatment = (e) => {
     e.preventDefault();
     if (!formData.treatmentPatient || !formData.treatmentDiagnosis || !formData.treatmentPlan) {
-      alert('กรุณากรอกข้อมูลให้ครบถ้วน');
-      return;
+      alert('กรุณากรอกข้อมูลให้ครบถ้วน'); return;
     }
-    
-    const patient = patients.find(p => p.id === parseInt(formData.treatmentPatient));
+    const patient = patients.find((p) => p.id === parseInt(formData.treatmentPatient, 10));
     const newRecord = {
       id: medicalRecords.length + 1,
       patientId: patient.id,
@@ -179,31 +206,23 @@ const DoctorDashboard = ({ onLogout, userData }) => {
       date: new Date().toISOString().split('T')[0],
       diagnosis: formData.treatmentDiagnosis,
       treatment: formData.treatmentPlan,
-      doctor: userData.name
+      doctor: userData.name,
     };
-    
     setMedicalRecords([...medicalRecords, newRecord]);
     setFormData({ ...formData, treatmentPatient: '', treatmentSymptoms: '', treatmentDiagnosis: '', treatmentPlan: '' });
-    alert('บันทึกการรักษาสำเร็จ');
+    alert('บันทึกการรักษาสำเร็จ (ตัวอย่าง)');
   };
 
   const handleCreateCertificate = (e) => {
     e.preventDefault();
-    if (!formData.certPatient || !formData.certDetails) {
-      alert('กรุณากรอกข้อมูลให้ครบถ้วน');
-      return;
-    }
-    alert('ออกใบรับรองแพทย์สำเร็จ\n\nพิมพ์หน้าต่างนี้เพื่อบันทึกเอกสาร');
+    if (!formData.certPatient || !formData.certDetails) { alert('กรุณากรอกข้อมูลให้ครบถ้วน'); return; }
+    alert('ออกใบรับรองแพทย์สำเร็จ (ตัวอย่าง) — ใช้คำสั่งพิมพ์ของเบราว์เซอร์ได้เลย');
   };
 
   const handleAddLabResult = (e) => {
     e.preventDefault();
-    if (!formData.labPatient || !formData.labResult) {
-      alert('กรุณากรอกข้อมูลให้ครบถ้วน');
-      return;
-    }
-    
-    const patient = patients.find(p => p.id === parseInt(formData.labPatient));
+    if (!formData.labPatient || !formData.labResult) { alert('กรุณากรอกข้อมูลให้ครบถ้วน'); return; }
+    const patient = patients.find((p) => p.id === parseInt(formData.labPatient, 10));
     const newLab = {
       id: labResults.length + 1,
       patientId: patient.id,
@@ -211,28 +230,29 @@ const DoctorDashboard = ({ onLogout, userData }) => {
       date: new Date().toISOString().split('T')[0],
       testType: formData.labTestType,
       result: formData.labResult,
-      wbc: 7500, rbc: 4.9, hb: 14.0, platelet: 260000
+      wbc: 7500, rbc: 4.9, hb: 14.0, platelet: 260000,
     };
-    
     setLabResults([...labResults, newLab]);
     setFormData({ ...formData, labPatient: '', labResult: '' });
-    alert('บันทึกผลการตรวจสำเร็จ');
+    alert('บันทึกผลการตรวจสำเร็จ (ตัวอย่าง)');
   };
 
-  const filteredPatients = patients.filter(p => 
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.hn.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.tel.includes(searchTerm)
-  );
+  // ค้นหา (กันพังด้วยการแปลง string เสมอ)
+  const needle = (searchTerm || '').toLowerCase();
+  const filteredPatients = patients.filter((p) => {
+    const name = String(p.name || '').toLowerCase();
+    const hn = String(p.hn || '').toLowerCase();
+    const tel = String(p.tel || '');
+    return name.includes(needle) || hn.includes(needle) || tel.includes(searchTerm);
+  });
 
-  const filteredRecords = medicalRecords.filter(r =>
-    r.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    r.diagnosis.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  const shownRecords = selectedPatient ? (recordsByPatient[selectedPatient.id] || []) : [];
+  const isLoadingRecords = selectedPatient ? (loadingRecordsId === selectedPatient.id) : false;
+  const recordsError = selectedPatient ? (recordsErrorByPatient[selectedPatient.id] || '') : '';
 
-  const filteredLabs = labResults.filter(l =>
-    l.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    l.testType.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredLabs = labResults.filter((l) =>
+    String(l.patientName || '').toLowerCase().includes(needle) ||
+    String(l.testType || '').toLowerCase().includes(needle)
   );
 
   const tabs = [
@@ -299,6 +319,9 @@ const DoctorDashboard = ({ onLogout, userData }) => {
         {activeTab === 'records' && (
           <div className="bg-white rounded-lg shadow-md p-6">
             <h2 className="text-2xl font-bold mb-6 text-gray-800">เวชระเบียนผู้ป่วย</h2>
+            {loadingPatients && <p>กำลังโหลดข้อมูลผู้ป่วย...</p>}
+            {patientsError && <p className="text-red-600">{patientsError}</p>}
+
             <div className="grid gap-4">
               {filteredPatients.map((patient) => (
                 <div key={patient.id} className="border rounded-lg p-4 hover:shadow-md transition-shadow">
@@ -310,25 +333,33 @@ const DoctorDashboard = ({ onLogout, userData }) => {
                       <p className="text-sm text-gray-500 mt-2">มาล่าสุด: {patient.lastVisit}</p>
                     </div>
                     <button
-                      onClick={() => setSelectedPatient(selectedPatient?.id === patient.id ? null : patient)}
+                      onClick={async () => {
+                        if (selectedPatient?.id === patient.id) { setSelectedPatient(null); return; }
+                        await loadRecords(patient.id);
+                        setSelectedPatient(patient);
+                      }}
                       className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700"
                     >
                       {selectedPatient?.id === patient.id ? 'ซ่อน' : 'ดูเวชระเบียน'}
                     </button>
                   </div>
+
                   {selectedPatient?.id === patient.id && (
                     <div className="mt-4 pt-4 border-t">
                       <h4 className="font-bold mb-2">ประวัติการรักษา</h4>
-                      {filteredRecords
-                        .filter((r) => r.patientId === patient.id)
-                        .map((record) => (
-                          <div key={record.id} className="bg-gray-50 p-3 rounded mb-2">
-                            <p className="text-sm text-gray-600">{record.date}</p>
-                            <p className="font-medium">การวินิจฉัย: {record.diagnosis}</p>
-                            <p className="text-sm">การรักษา: {record.treatment}</p>
-                            <p className="text-sm text-gray-600">โดย: {record.doctor}</p>
-                          </div>
-                        ))}
+                      {isLoadingRecords && <p className="text-gray-600">กำลังโหลดเวชระเบียน...</p>}
+                      {recordsError && <p className="text-red-600">{recordsError}</p>}
+                      {!isLoadingRecords && !recordsError && shownRecords.length === 0 && (
+                        <p className="text-gray-600">ยังไม่มีเวชระเบียน</p>
+                      )}
+                      {shownRecords.map((record) => (
+                        <div key={record.id} className="bg-gray-50 p-3 rounded mb-2">
+                          <p className="text-sm text-gray-600">{record.date}</p>
+                          <p className="font-medium">การวินิจฉัย: {record.diagnosis}</p>
+                          <p className="text-sm">การรักษา: {record.treatment}</p>
+                          <p className="text-sm text-gray-600">โดย: {record.doctor}</p>
+                        </div>
+                      ))}
                     </div>
                   )}
                 </div>
@@ -520,10 +551,17 @@ const DoctorDashboard = ({ onLogout, userData }) => {
               <div className="grid gap-4">
                 {filteredLabs.map((lab) => (
                   <div key={lab.id} className="border rounded-lg p-4">
-                    <h3 className="font-bold text-lg mb-3">{lab.patientName} ({patients.find(p => p.patientId === lab.id)?.hn})</h3>
+                    <h3 className="font-bold text-lg mb-3">
+                      {lab.patientName} ({patients.find((p) => p.id === lab.patientId)?.hn})
+                    </h3>
                     <div className="bg-blue-50 p-4 rounded-lg">
                       <p className="font-medium mb-2">{lab.testType} - {lab.date}</p>
-                      <p className="text-sm mb-3">สถานะ: <span className={lab.result === 'ปกติ' ? 'text-green-600 font-semibold' : 'text-yellow-600 font-semibold'}>{lab.result}</span></p>
+                      <p className="text-sm mb-3">
+                        สถานะ:{' '}
+                        <span className={lab.result === 'ปกติ' ? 'text-green-600 font-semibold' : 'text-yellow-600 font-semibold'}>
+                          {lab.result}
+                        </span>
+                      </p>
                       {lab.result === 'ปกติ' && (
                         <div className="grid grid-cols-2 gap-3 text-sm">
                           <div><span className="text-gray-600">WBC:</span> <span className="font-medium">{lab.wbc} cells/μL</span></div>
@@ -570,22 +608,36 @@ const DoctorDashboard = ({ onLogout, userData }) => {
   );
 };
 
+/* --------------------------- Staff --------------------------- */
 const StaffDashboard = ({ onLogout, userData }) => {
   const [activeTab, setActiveTab] = useState('patients');
   const [searchTerm, setSearchTerm] = useState('');
-  
-  const [patients, setPatients] = useState([
-    { id: 1, name: 'สมชาย ใจดี', age: 35, hn: 'HN001', tel: '081-234-5678', lastVisit: '2025-10-15' },
-    { id: 2, name: 'สมหญิง รักสุข', age: 28, hn: 'HN002', tel: '082-345-6789', lastVisit: '2025-10-16' },
-    { id: 3, name: 'วิชัย มีสุข', age: 45, hn: 'HN003', tel: '083-456-7890', lastVisit: '2025-10-17' },
-  ]);
+
+  const [patients, setPatients] = useState([]);
+  const [loadingPatients, setLoadingPatients] = useState(true);
+  const [patientsError, setPatientsError] = useState('');
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const res = await fetch(`${API}/patients`);
+        const json = await res.json();
+        if (!res.ok) throw new Error(json.message || 'โหลดรายชื่อผู้ป่วยไม่สำเร็จ');
+        setPatients(json.data || []);
+      } catch (err) {
+        setPatientsError(err.message || 'เชื่อมต่อเซิร์ฟเวอร์ไม่ได้');
+      } finally {
+        setLoadingPatients(false);
+      }
+    };
+    load();
+  }, []);
 
   const [appointments, setAppointments] = useState([
     { id: 1, patientName: 'สมชาย ใจดี', date: '2025-10-20', time: '09:00', type: 'ตรวจรักษาทั่วไป', status: 'รอพบแพทย์' },
     { id: 2, patientName: 'สมหญิง รักสุข', date: '2025-10-20', time: '10:30', type: 'ตรวจสุขภาพประจำปี', status: 'รอพบแพทย์' },
     { id: 3, patientName: 'วิชัย มีสุข', date: '2025-10-21', time: '14:00', type: 'ตรวจติดตามผล', status: 'ยืนยันแล้ว' },
   ]);
-
   const [payments, setPayments] = useState([
     { id: 1, patientName: 'สมชาย ใจดี', date: '2025-10-15', service: 'ตรวจรักษาทั่วไป', amount: 500, method: 'เงินสด' },
     { id: 2, patientName: 'สมหญิง รักสุข', date: '2025-10-16', service: 'ตรวจเลือด', amount: 800, method: 'โอนเงิน' },
@@ -598,49 +650,36 @@ const StaffDashboard = ({ onLogout, userData }) => {
     appointPatient: '', appointDate: '', appointTime: '', appointType: 'ตรวจรักษาทั่วไป',
     paymentPatient: '', paymentAmount: '', paymentMethod: 'เงินสด', paymentService: 'ตรวจรักษาทั่วไป'
   });
-
-  const handleFormChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-  };
+  const handleFormChange = (f, v) => setFormData((p) => ({ ...p, [f]: v }));
 
   const handleAddPatient = (e) => {
     e.preventDefault();
-    if (!formData.patientName || !formData.patientAge || !formData.patientHN || !formData.patientTel) {
-      alert('กรุณากรอกข้อมูลให้ครบถ้วน');
-      return;
-    }
-    
+    if (!formData.patientName || !formData.patientAge || !formData.patientHN || !formData.patientTel) { alert('กรุณากรอกข้อมูลให้ครบถ้วน'); return; }
     const newPatient = {
       id: patients.length + 1,
       name: formData.patientName,
-      age: parseInt(formData.patientAge),
+      age: parseInt(formData.patientAge, 10),
       hn: formData.patientHN,
       tel: formData.patientTel,
-      lastVisit: new Date().toISOString().split('T')[0]
+      lastVisit: new Date().toISOString().split('T')[0],
     };
-    
     setPatients([...patients, newPatient]);
     setFormData({ ...formData, patientName: '', patientAge: '', patientHN: '', patientTel: '' });
     setShowAddPatient(false);
-    alert('เพิ่มผู้ป่วยสำเร็จ');
+    alert('เพิ่มผู้ป่วยสำเร็จ (ตัวอย่าง)');
   };
 
   const handleAddAppointment = (e) => {
     e.preventDefault();
-    if (!formData.appointPatient || !formData.appointDate || !formData.appointTime) {
-      alert('กรุณากรอกข้อมูลให้ครบถ้วน');
-      return;
-    }
-    
+    if (!formData.appointPatient || !formData.appointDate || !formData.appointTime) { alert('กรุณากรอกข้อมูลให้ครบถ้วน'); return; }
     const newAppointment = {
       id: appointments.length + 1,
       patientName: formData.appointPatient,
       date: formData.appointDate,
       time: formData.appointTime,
       type: formData.appointType,
-      status: 'รอพบแพทย์'
+      status: 'รอพบแพทย์',
     };
-    
     setAppointments([...appointments, newAppointment]);
     setFormData({ ...formData, appointPatient: '', appointDate: '', appointTime: '' });
     setShowAddAppointment(false);
@@ -649,68 +688,52 @@ const StaffDashboard = ({ onLogout, userData }) => {
 
   const handleAddPayment = (e) => {
     e.preventDefault();
-    if (!formData.paymentPatient || !formData.paymentAmount) {
-      alert('กรุณากรอกข้อมูลให้ครบถ้วน');
-      return;
-    }
-    
+    if (!formData.paymentPatient || !formData.paymentAmount) { alert('กรุณากรอกข้อมูลให้ครบถ้วน'); return; }
     const newPayment = {
       id: payments.length + 1,
       patientName: formData.paymentPatient,
       date: new Date().toISOString().split('T')[0],
       service: formData.paymentService,
-      amount: parseInt(formData.paymentAmount),
-      method: formData.paymentMethod
+      amount: parseInt(formData.paymentAmount, 10),
+      method: formData.paymentMethod,
     };
-    
     setPayments([...payments, newPayment]);
     setFormData({ ...formData, paymentPatient: '', paymentAmount: '' });
     alert('บันทึกการชำระเงินสำเร็จ');
   };
 
   const handlePrintAppointment = (apt) => {
-    const printWindow = window.open('', '', 'width=800,height=600');
-    printWindow.document.write(`
-      <html>
-        <head>
-          <title>ใบนัดหมาย</title>
-          <style>
-            body { font-family: Arial, sans-serif; padding: 40px; }
-            h1 { color: #10b981; }
-            .info { margin: 20px 0; line-height: 2; }
-          </style>
-        </head>
-        <body>
-          <h1>🏥 ใบนัดหมาย</h1>
-          <div class="info">
-            <p><strong>ชื่อผู้ป่วย:</strong> ${apt.patientName}</p>
-            <p><strong>วันที่นัด:</strong> ${apt.date}</p>
-            <p><strong>เวลา:</strong> ${apt.time} น.</p>
-            <p><strong>ประเภท:</strong> ${apt.type}</p>
-            <p><strong>สถานะ:</strong> ${apt.status}</p>
-          </div>
-          <p style="margin-top: 40px;">กรุณามาตรงเวลา</p>
-        </body>
-      </html>
+    const w = window.open('', '', 'width=800,height=600');
+    w.document.write(`
+      <html><head><title>ใบนัดหมาย</title>
+      <style>body{font-family:Arial;padding:40px}h1{color:#10b981}.info{margin:20px 0;line-height:2}</style>
+      </head><body>
+      <h1>🏥 ใบนัดหมาย</h1>
+      <div class="info">
+        <p><strong>ชื่อผู้ป่วย:</strong> ${apt.patientName}</p>
+        <p><strong>วันที่นัด:</strong> ${apt.date}</p>
+        <p><strong>เวลา:</strong> ${apt.time} น.</p>
+        <p><strong>ประเภท:</strong> ${apt.type}</p>
+        <p><strong>สถานะ:</strong> ${apt.status}</p>
+      </div>
+      <p style="margin-top:40px">กรุณามาตรงเวลา</p>
+      </body></html>
     `);
-    printWindow.document.close();
-    printWindow.print();
+    w.document.close(); w.print();
   };
 
-  const filteredPatients = patients.filter(p =>
-    p.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.hn.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.tel.includes(searchTerm)
+  const filteredPatients = patients.filter((p) =>
+    String(p.name || '').toLowerCase().includes((searchTerm || '').toLowerCase()) ||
+    String(p.hn || '').toLowerCase().includes((searchTerm || '').toLowerCase()) ||
+    String(p.tel || '').includes(searchTerm || '')
   );
-
-  const filteredAppointments = appointments.filter(a =>
-    a.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    a.type.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredAppointments = appointments.filter((a) =>
+    a.patientName.toLowerCase().includes((searchTerm || '').toLowerCase()) ||
+    a.type.toLowerCase().includes((searchTerm || '').toLowerCase())
   );
-
-  const filteredPayments = payments.filter(p =>
-    p.patientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    p.service.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredPayments = payments.filter((p) =>
+    p.patientName.toLowerCase().includes((searchTerm || '').toLowerCase()) ||
+    p.service.toLowerCase().includes((searchTerm || '').toLowerCase())
   );
 
   const tabs = [
@@ -781,51 +804,23 @@ const StaffDashboard = ({ onLogout, userData }) => {
                 <span>{showAddPatient ? 'ยกเลิก' : '+ เพิ่มผู้ป่วยใหม่'}</span>
               </button>
             </div>
-            
+
             {showAddPatient && (
               <div className="mb-6 p-4 bg-green-50 rounded-lg">
                 <h3 className="font-bold mb-4">เพิ่มผู้ป่วยใหม่</h3>
                 <form onSubmit={handleAddPatient} className="grid grid-cols-2 gap-4">
-                  <input
-                    type="text"
-                    value={formData.patientName}
-                    onChange={(e) => handleFormChange('patientName', e.target.value)}
-                    placeholder="ชื่อ-นามสกุล *"
-                    className="border rounded-lg px-4 py-2"
-                    required
-                  />
-                  <input
-                    type="number"
-                    value={formData.patientAge}
-                    onChange={(e) => handleFormChange('patientAge', e.target.value)}
-                    placeholder="อายุ *"
-                    className="border rounded-lg px-4 py-2"
-                    required
-                  />
-                  <input
-                    type="text"
-                    value={formData.patientHN}
-                    onChange={(e) => handleFormChange('patientHN', e.target.value)}
-                    placeholder="HN *"
-                    className="border rounded-lg px-4 py-2"
-                    required
-                  />
-                  <input
-                    type="text"
-                    value={formData.patientTel}
-                    onChange={(e) => handleFormChange('patientTel', e.target.value)}
-                    placeholder="เบอร์โทร *"
-                    className="border rounded-lg px-4 py-2"
-                    required
-                  />
-                  <button type="submit" className="col-span-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">
-                    บันทึกผู้ป่วย
-                  </button>
+                  <input type="text" value={formData.patientName} onChange={(e) => handleFormChange('patientName', e.target.value)} placeholder="ชื่อ-นามสกุล *" className="border rounded-lg px-4 py-2" required />
+                  <input type="number" value={formData.patientAge} onChange={(e) => handleFormChange('patientAge', e.target.value)} placeholder="อายุ *" className="border rounded-lg px-4 py-2" required />
+                  <input type="text" value={formData.patientHN} onChange={(e) => handleFormChange('patientHN', e.target.value)} placeholder="HN *" className="border rounded-lg px-4 py-2" required />
+                  <input type="text" value={formData.patientTel} onChange={(e) => handleFormChange('patientTel', e.target.value)} placeholder="เบอร์โทร *" className="border rounded-lg px-4 py-2" required />
+                  <button type="submit" className="col-span-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">บันทึกผู้ป่วย</button>
                 </form>
               </div>
             )}
 
             <div className="overflow-x-auto">
+              {loadingPatients && <p>กำลังโหลดข้อมูลผู้ป่วย...</p>}
+              {patientsError && <p className="text-red-600">{patientsError}</p>}
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
@@ -856,10 +851,7 @@ const StaffDashboard = ({ onLogout, userData }) => {
           <div className="bg-white rounded-lg shadow-md p-6">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold text-gray-800">จัดการการนัดหมาย</h2>
-              <button
-                onClick={() => setShowAddAppointment(!showAddAppointment)}
-                className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
-              >
+              <button onClick={() => setShowAddAppointment(!showAddAppointment)} className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2">
                 <span>{showAddAppointment ? 'ยกเลิก' : '+ นัดหมายใหม่'}</span>
               </button>
             </div>
@@ -868,41 +860,18 @@ const StaffDashboard = ({ onLogout, userData }) => {
               <div className="mb-6 p-4 bg-green-50 rounded-lg">
                 <h3 className="font-bold mb-4">สร้างนัดหมายใหม่</h3>
                 <form onSubmit={handleAddAppointment} className="grid grid-cols-2 gap-4">
-                  <select
-                    value={formData.appointPatient}
-                    onChange={(e) => handleFormChange('appointPatient', e.target.value)}
-                    className="border rounded-lg px-4 py-2"
-                    required
-                  >
+                  <select value={formData.appointPatient} onChange={(e) => handleFormChange('appointPatient', e.target.value)} className="border rounded-lg px-4 py-2" required>
                     <option value="">เลือกผู้ป่วย *</option>
-                    {patients.map(p => <option key={p.id} value={p.name}>{p.name} ({p.hn})</option>)}
+                    {patients.map((p) => <option key={p.id} value={p.name}>{p.name} ({p.hn})</option>)}
                   </select>
-                  <select
-                    value={formData.appointType}
-                    onChange={(e) => handleFormChange('appointType', e.target.value)}
-                    className="border rounded-lg px-4 py-2"
-                  >
+                  <select value={formData.appointType} onChange={(e) => handleFormChange('appointType', e.target.value)} className="border rounded-lg px-4 py-2">
                     <option>ตรวจรักษาทั่วไป</option>
                     <option>ตรวจสุขภาพประจำปี</option>
                     <option>ตรวจติดตามผล</option>
                   </select>
-                  <input
-                    type="date"
-                    value={formData.appointDate}
-                    onChange={(e) => handleFormChange('appointDate', e.target.value)}
-                    className="border rounded-lg px-4 py-2"
-                    required
-                  />
-                  <input
-                    type="time"
-                    value={formData.appointTime}
-                    onChange={(e) => handleFormChange('appointTime', e.target.value)}
-                    className="border rounded-lg px-4 py-2"
-                    required
-                  />
-                  <button type="submit" className="col-span-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">
-                    สร้างนัดหมาย
-                  </button>
+                  <input type="date" value={formData.appointDate} onChange={(e) => handleFormChange('appointDate', e.target.value)} className="border rounded-lg px-4 py-2" required />
+                  <input type="time" value={formData.appointTime} onChange={(e) => handleFormChange('appointTime', e.target.value)} className="border rounded-lg px-4 py-2" required />
+                  <button type="submit" className="col-span-2 bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700">สร้างนัดหมาย</button>
                 </form>
               </div>
             )}
@@ -921,10 +890,7 @@ const StaffDashboard = ({ onLogout, userData }) => {
                         {apt.status}
                       </span>
                     </div>
-                    <button
-                      onClick={() => handlePrintAppointment(apt)}
-                      className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-1"
-                    >
+                    <button onClick={() => handlePrintAppointment(apt)} className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 flex items-center space-x-1">
                       <Printer size={16} />
                       <span>พิมพ์</span>
                     </button>
@@ -942,46 +908,24 @@ const StaffDashboard = ({ onLogout, userData }) => {
               <div className="border rounded-lg p-4">
                 <h3 className="font-bold text-lg mb-4">บันทึกการชำระเงิน</h3>
                 <form onSubmit={handleAddPayment} className="space-y-4">
-                  <select
-                    value={formData.paymentPatient}
-                    onChange={(e) => handleFormChange('paymentPatient', e.target.value)}
-                    className="w-full border rounded-lg px-4 py-2"
-                    required
-                  >
+                  <select value={formData.paymentPatient} onChange={(e) => handleFormChange('paymentPatient', e.target.value)} className="w-full border rounded-lg px-4 py-2" required>
                     <option value="">เลือกผู้ป่วย *</option>
-                    {patients.map(p => <option key={p.id} value={p.name}>{p.name} ({p.hn})</option>)}
+                    {patients.map((p) => <option key={p.id} value={p.name}>{p.name} ({p.hn})</option>)}
                   </select>
-                  <select
-                    value={formData.paymentService}
-                    onChange={(e) => handleFormChange('paymentService', e.target.value)}
-                    className="w-full border rounded-lg px-4 py-2"
-                  >
+                  <select value={formData.paymentService} onChange={(e) => handleFormChange('paymentService', e.target.value)} className="w-full border rounded-lg px-4 py-2">
                     <option>ตรวจรักษาทั่วไป</option>
                     <option>ตรวจเลือด</option>
                     <option>ตรวจสารคัดหลั่ง</option>
                     <option>ใบรับรองแพทย์</option>
                   </select>
-                  <input
-                    type="number"
-                    value={formData.paymentAmount}
-                    onChange={(e) => handleFormChange('paymentAmount', e.target.value)}
-                    placeholder="จำนวนเงิน (บาท) *"
-                    className="w-full border rounded-lg px-4 py-2"
-                    required
-                  />
-                  <select
-                    value={formData.paymentMethod}
-                    onChange={(e) => handleFormChange('paymentMethod', e.target.value)}
-                    className="w-full border rounded-lg px-4 py-2"
-                  >
+                  <input type="number" value={formData.paymentAmount} onChange={(e) => handleFormChange('paymentAmount', e.target.value)} placeholder="จำนวนเงิน (บาท) *" className="w-full border rounded-lg px-4 py-2" required />
+                  <select value={formData.paymentMethod} onChange={(e) => handleFormChange('paymentMethod', e.target.value)} className="w-full border rounded-lg px-4 py-2">
                     <option>เงินสด</option>
                     <option>บัตรเครดิต</option>
                     <option>โอนเงิน</option>
                     <option>QR Code</option>
                   </select>
-                  <button type="submit" className="w-full bg-green-600 text-white px-4 py-3 rounded-lg hover:bg-green-700 font-medium">
-                    บันทึกการชำระเงิน
-                  </button>
+                  <button type="submit" className="w-full bg-green-600 text-white px-4 py-3 rounded-lg hover:bg-green-700 font-medium">บันทึกการชำระเงิน</button>
                 </form>
               </div>
               <div className="border rounded-lg p-4">
@@ -1015,46 +959,36 @@ const StaffDashboard = ({ onLogout, userData }) => {
   );
 };
 
+/* --------------------------- Owner --------------------------- */
 const OwnerDashboard = ({ onLogout, userData }) => {
   const [activeTab, setActiveTab] = useState('staff');
   const [searchTerm, setSearchTerm] = useState('');
-  
+
   const [staff, setStaff] = useState([
     { id: 1, name: 'สมศรี พนักงานดี', position: 'พนักงานต้อนรับ', tel: '081-111-2222', startDate: '2023-01-15', salary: 15000 },
     { id: 2, name: 'วิไล ช่วยเหลือ', position: 'เจ้าหน้าที่การเงิน', tel: '082-222-3333', startDate: '2023-03-20', salary: 18000 },
   ]);
-
-  const [revenue, setRevenue] = useState([
+  const [revenue] = useState([
     { date: '2025-10-15', amount: 15000, services: 8, type: 'ตรวจรักษา' },
     { date: '2025-10-16', amount: 22000, services: 12, type: 'ตรวจรักษา' },
     { date: '2025-10-17', amount: 18000, services: 10, type: 'ตรวจรักษา' },
   ]);
 
   const [showAddStaff, setShowAddStaff] = useState(false);
-  const [formData, setFormData] = useState({
-    staffName: '', staffPosition: '', staffTel: '', staffSalary: ''
-  });
-
-  const handleFormChange = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
-  };
+  const [formData, setFormData] = useState({ staffName: '', staffPosition: '', staffTel: '', staffSalary: '' });
+  const handleFormChange = (f, v) => setFormData((p) => ({ ...p, [f]: v }));
 
   const handleAddStaff = (e) => {
     e.preventDefault();
-    if (!formData.staffName || !formData.staffPosition || !formData.staffTel || !formData.staffSalary) {
-      alert('กรุณากรอกข้อมูลให้ครบถ้วน');
-      return;
-    }
-    
+    if (!formData.staffName || !formData.staffPosition || !formData.staffTel || !formData.staffSalary) { alert('กรุณากรอกข้อมูลให้ครบถ้วน'); return; }
     const newStaff = {
       id: staff.length + 1,
       name: formData.staffName,
       position: formData.staffPosition,
       tel: formData.staffTel,
-      salary: parseInt(formData.staffSalary),
-      startDate: new Date().toISOString().split('T')[0]
+      salary: parseInt(formData.staffSalary, 10),
+      startDate: new Date().toISOString().split('T')[0],
     };
-    
     setStaff([...staff, newStaff]);
     setFormData({ staffName: '', staffPosition: '', staffTel: '', staffSalary: '' });
     setShowAddStaff(false);
@@ -1065,13 +999,12 @@ const OwnerDashboard = ({ onLogout, userData }) => {
   const totalServices = revenue.reduce((a, b) => a + b.services, 0);
   const totalSalary = staff.reduce((a, b) => a + b.salary, 0);
 
-  const filteredStaff = staff.filter(s =>
-    s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    s.position.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredStaff = staff.filter((s) =>
+    s.name.toLowerCase().includes((searchTerm || '').toLowerCase()) ||
+    s.position.toLowerCase().includes((searchTerm || '').toLowerCase())
   );
-
-  const filteredRevenue = revenue.filter(r =>
-    r.type.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredRevenue = revenue.filter((r) =>
+    r.type.toLowerCase().includes((searchTerm || '').toLowerCase())
   );
 
   const tabs = [
@@ -1134,10 +1067,7 @@ const OwnerDashboard = ({ onLogout, userData }) => {
           <div className="bg-white rounded-lg shadow-md p-6">
             <div className="flex justify-between items-center mb-6">
               <h2 className="text-2xl font-bold text-gray-800">จัดการทะเบียนพนักงาน</h2>
-              <button
-                onClick={() => setShowAddStaff(!showAddStaff)}
-                className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 flex items-center space-x-2"
-              >
+              <button onClick={() => setShowAddStaff(!showAddStaff)} className="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 flex items-center space-x-2">
                 <span>{showAddStaff ? 'ยกเลิก' : '+ เพิ่มพนักงาน'}</span>
               </button>
             </div>
@@ -1146,41 +1076,11 @@ const OwnerDashboard = ({ onLogout, userData }) => {
               <div className="mb-6 p-4 bg-purple-50 rounded-lg">
                 <h3 className="font-bold mb-4">เพิ่มพนักงานใหม่</h3>
                 <form onSubmit={handleAddStaff} className="grid grid-cols-2 gap-4">
-                  <input
-                    type="text"
-                    value={formData.staffName}
-                    onChange={(e) => handleFormChange('staffName', e.target.value)}
-                    placeholder="ชื่อ-นามสกุล *"
-                    className="border rounded-lg px-4 py-2"
-                    required
-                  />
-                  <input
-                    type="text"
-                    value={formData.staffPosition}
-                    onChange={(e) => handleFormChange('staffPosition', e.target.value)}
-                    placeholder="ตำแหน่ง *"
-                    className="border rounded-lg px-4 py-2"
-                    required
-                  />
-                  <input
-                    type="text"
-                    value={formData.staffTel}
-                    onChange={(e) => handleFormChange('staffTel', e.target.value)}
-                    placeholder="เบอร์โทร *"
-                    className="border rounded-lg px-4 py-2"
-                    required
-                  />
-                  <input
-                    type="number"
-                    value={formData.staffSalary}
-                    onChange={(e) => handleFormChange('staffSalary', e.target.value)}
-                    placeholder="เงินเดือน (บาท) *"
-                    className="border rounded-lg px-4 py-2"
-                    required
-                  />
-                  <button type="submit" className="col-span-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700">
-                    บันทึกพนักงาน
-                  </button>
+                  <input type="text" value={formData.staffName} onChange={(e) => handleFormChange('staffName', e.target.value)} placeholder="ชื่อ-นามสกุล *" className="border rounded-lg px-4 py-2" required />
+                  <input type="text" value={formData.staffPosition} onChange={(e) => handleFormChange('staffPosition', e.target.value)} placeholder="ตำแหน่ง *" className="border rounded-lg px-4 py-2" required />
+                  <input type="text" value={formData.staffTel} onChange={(e) => handleFormChange('staffTel', e.target.value)} placeholder="เบอร์โทร *" className="border rounded-lg px-4 py-2" required />
+                  <input type="number" value={formData.staffSalary} onChange={(e) => handleFormChange('staffSalary', e.target.value)} placeholder="เงินเดือน (บาท) *" className="border rounded-lg px-4 py-2" required />
+                  <button type="submit" className="col-span-2 bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700">บันทึกพนักงาน</button>
                 </form>
               </div>
             )}
@@ -1205,6 +1105,7 @@ const OwnerDashboard = ({ onLogout, userData }) => {
                 </div>
               ))}
             </div>
+
             <div className="mt-6 bg-purple-50 p-4 rounded-lg">
               <div className="grid grid-cols-2 gap-4">
                 <div className="text-center">
@@ -1267,9 +1168,7 @@ const OwnerDashboard = ({ onLogout, userData }) => {
                         <td className="px-4 py-3">{rev.date}</td>
                         <td className="px-4 py-3">{rev.type}</td>
                         <td className="px-4 py-3 text-right">{rev.services}</td>
-                        <td className="px-4 py-3 text-right font-bold text-green-600">
-                          {rev.amount.toLocaleString()}
-                        </td>
+                        <td className="px-4 py-3 text-right font-bold text-green-600">{rev.amount.toLocaleString()}</td>
                       </tr>
                     ))}
                     <tr className="bg-gray-50 font-bold">
@@ -1280,27 +1179,24 @@ const OwnerDashboard = ({ onLogout, userData }) => {
                   </tbody>
                 </table>
               </div>
+
               <div className="mt-6 flex justify-end space-x-3">
                 <button
                   onClick={() => {
-                    const printWindow = window.open('', '', 'width=800,height=600');
-                    printWindow.document.write(`
-                      <html>
-                        <head><title>รายงานรายได้</title>
-                        <style>body{font-family:Arial;padding:40px;}table{width:100%;border-collapse:collapse;}th,td{border:1px solid #ddd;padding:8px;text-align:left;}</style>
-                        </head>
-                        <body>
-                          <h1>รายงานรายได้คลินิก</h1>
-                          <table>
-                            <tr><th>วันที่</th><th>ประเภท</th><th>จำนวน</th><th>รายได้</th></tr>
-                            ${revenue.map(r => `<tr><td>${r.date}</td><td>${r.type}</td><td>${r.services}</td><td>${r.amount.toLocaleString()}</td></tr>`).join('')}
-                            <tr><td colspan="2"><b>รวม</b></td><td><b>${totalServices}</b></td><td><b>${totalRevenue.toLocaleString()}</b></td></tr>
-                          </table>
-                        </body>
-                      </html>
+                    const w = window.open('', '', 'width=800,height=600');
+                    w.document.write(`
+                      <html><head><title>รายงานรายได้</title>
+                      <style>body{font-family:Arial;padding:40px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #ddd;padding:8px;text-align:left}</style>
+                      </head><body>
+                        <h1>รายงานรายได้คลินิก</h1>
+                        <table>
+                          <tr><th>วันที่</th><th>ประเภท</th><th>จำนวน</th><th>รายได้</th></tr>
+                          ${revenue.map(r => `<tr><td>${r.date}</td><td>${r.type}</td><td>${r.services}</td><td>${r.amount.toLocaleString()}</td></tr>`).join('')}
+                          <tr><td colspan="2"><b>รวม</b></td><td><b>${totalServices}</b></td><td><b>${totalRevenue.toLocaleString()}</b></td></tr>
+                        </table>
+                      </body></html>
                     `);
-                    printWindow.document.close();
-                    printWindow.print();
+                    w.document.close(); w.print();
                   }}
                   className="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 flex items-center space-x-2"
                 >
@@ -1315,10 +1211,10 @@ const OwnerDashboard = ({ onLogout, userData }) => {
               <div className="h-64 flex items-end justify-around space-x-2">
                 {revenue.map((rev, i) => (
                   <div key={i} className="flex-1 flex flex-col items-center">
-                    <div 
+                    <div
                       className="w-full bg-gradient-to-t from-purple-600 to-purple-400 rounded-t-lg transition-all hover:opacity-80"
                       style={{ height: `${(rev.amount / Math.max(...revenue.map(r => r.amount))) * 100}%` }}
-                    ></div>
+                    />
                     <p className="text-xs text-gray-600 mt-2 text-center">
                       {new Date(rev.date).getDate()}/{new Date(rev.date).getMonth() + 1}
                     </p>
@@ -1334,32 +1230,15 @@ const OwnerDashboard = ({ onLogout, userData }) => {
   );
 };
 
+/* --------------------------- App Root --------------------------- */
 export default function ClinicManagementApp() {
   const [currentUser, setCurrentUser] = useState(null);
+  const handleLogin = (user) => setCurrentUser(user);
+  const handleLogout = () => setCurrentUser(null);
 
-  const handleLogin = (user) => {
-    setCurrentUser(user);
-  };
-
-  const handleLogout = () => {
-    setCurrentUser(null);
-  };
-
-  if (!currentUser) {
-    return <Login onLogin={handleLogin} />;
-  }
-
-  if (currentUser.role === 'doctor') {
-    return <DoctorDashboard onLogout={handleLogout} userData={currentUser} />;
-  }
-
-  if (currentUser.role === 'staff') {
-    return <StaffDashboard onLogout={handleLogout} userData={currentUser} />;
-  }
-
-  if (currentUser.role === 'owner') {
-    return <OwnerDashboard onLogout={handleLogout} userData={currentUser} />;
-  }
-
+  if (!currentUser) return <Login onLogin={handleLogin} />;
+  if (currentUser.role === 'doctor') return <DoctorDashboard onLogout={handleLogout} userData={currentUser} />;
+  if (currentUser.role === 'staff') return <StaffDashboard onLogout={handleLogout} userData={currentUser} />;
+  if (currentUser.role === 'owner') return <OwnerDashboard onLogout={handleLogout} userData={currentUser} />;
   return null;
 }
